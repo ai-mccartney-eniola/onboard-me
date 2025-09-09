@@ -1,0 +1,48 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Account B Cross-Account Role for Ultimate Onboarding Automation'
+
+Parameters:
+  AccountAId:
+    Type: String
+    Description: Account A ID that will assume this role
+    Default: "762233731285"
+
+Resources:
+  CrossAccountBucketCreationRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: CrossAccountBucketCreationRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Sub "arn:aws:iam::${AccountAId}:root"
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                'sts:ExternalId': 'ultimate-onboarding-automation'
+      Policies:
+        - PolicyName: S3BucketCreationPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:CreateBucket
+                  - s3:PutBucketVersioning
+                  - s3:PutBucketNotification
+                  - s3:GetBucketLocation
+                Resource: 
+                  - "arn:aws:s3:::prod-d-stack-client-*"
+              - Effect: Allow
+                Action:
+                  - s3:ListAllMyBuckets
+                Resource: "*"
+
+Outputs:
+  CrossAccountRoleArn:
+    Description: ARN of the cross-account role
+    Value: !GetAtt CrossAccountBucketCreationRole.Arn
+    Export:
+      Name: CrossAccountBucketCreationRoleArn

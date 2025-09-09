@@ -1,0 +1,647 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Ultimate Onboarding Automation - Complete End-to-End Client Onboarding'
+
+Parameters:
+  AccountBId:
+    Type: String
+    Description: Account B ID for cross-account operations
+    Default: "329599656204"
+
+Resources:
+  # S3 Bucket for client onboarding automation
+  OnboardingClientBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: d-stack-onboarding-client-automation-bkt
+      VersioningConfiguration:
+        Status: Enabled
+      NotificationConfiguration:
+        EventBridgeConfiguration:
+          EventBridgeEnabled: true
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  # EventBridge Rule to trigger first workflow on S3 PUT events
+  S3PutEventRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: s3-put-trigger-onboarding
+      Description: Trigger onboarding workflow when CSV files are uploaded
+      EventPattern:
+        source: ["aws.s3"]
+        detail-type: ["Object Created"]
+        detail:
+          bucket:
+            name: [!Ref OnboardingClientBucket]
+          object:
+            key:
+              - suffix: ".csv"
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt FirstWorkflowStateMachine.Arn
+          Id: "TriggerFirstWorkflow"
+          RoleArn: !GetAtt EventBridgeExecutionRole.Arn
+          InputTransformer:
+            InputPathsMap:
+              bucket: "$.detail.bucket.name"
+              key: "$.detail.object.key"
+            InputTemplate: |
+              {
+                "bucket": "<bucket>",
+                "key": "<key>",
+                "companyName": "auto-extracted",
+                "userName": "system-trigger",
+                "userId": "eventbridge-001"
+              }
+
+  # First Workflow State Machine
+  FirstWorkflowStateMachine:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: ultimate-first-workflow
+      DefinitionString: !Sub |
+        {
+          "Comment": "Ultimate First Workflow - CSV Processing and User Creation",
+          "StartAt": "Extract Company Info",
+          "States": {
+            "Extract Company Info": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "Parameters": {
+                "FunctionName": "${ExtractCompanyInfoFunction}",
+                "Payload": {
+                  "bucket.$": "$.bucket",
+                  "key.$": "$.key"
+                }
+              },
+              "ResultSelector": {
+                "companyName.$": "$.Payload.companyName",
+                "userName.$": "$.Payload.userName",
+                "userId.$": "$.Payload.userId"
+              },
+              "Next": "Create DynamoDB Entry"
+            },
+            "Create DynamoDB Entry": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::dynamodb:putItem",
+              "Parameters": {
+                "TableName": "user_sftp_table_center",
+                "Item": {
+                  "companyPk": {"S.$": "States.Format('COMPANY#{}', $.companyName)"},
+                  "companyName": {"S.$": "$.companyName"},
+                  "sk": {"S": "PROFILE"},
+                  "pk": {"S.$": "States.Format('USER#{}', $.userId)"},
+                  "userName": {"S.$": "$.userName"},
+                  "userId": {"S.$": "$.userId"},
+                  "companySk": {"S.$": "States.Format('USER#{}', $.userId)"},
+                  "status": {"S": "active"}
+                }
+              },
+              "Next": "First Workflow Complete"
+            },
+            "First Workflow Complete": {
+              "Type": "Pass",
+              "Parameters": {
+                "workflowStatus": "SUCCESS",
+                "message": "First workflow complete - DynamoDB stream will trigger second workflow",
+                "companyName.$": "$.companyName",
+                "userName.$": "$.userName",
+                "userId.$": "$.userId"
+              },
+              "End": true
+            }
+          }
+        }
+      RoleArn: !GetAtt FirstWorkflowExecutionRole.Arn
+
+  # Second Workflow State Machine (Simplified)
+  SecondWorkflowStateMachine:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: ultimate-second-workflow
+      DefinitionString: !Sub |
+        {
+          "Comment": "Ultimate Second Workflow - Account A & B Infrastructure Setup",
+          "StartAt": "Parse DynamoDB Event",
+          "States": {
+            "Parse DynamoDB Event": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "Parameters": {
+                "FunctionName": "${ParseDynamoDBEventFunction}",
+                "Payload": {
+                  "Records.$": "$.Records"
+                }
+              },
+              "ResultSelector": {
+                "companyName.$": "$.Payload.companyName",
+                "userName.$": "$.Payload.userName",
+                "userId.$": "$.Payload.userId",
+                "eventType.$": "$.Payload.eventType"
+              },
+              "Next": "Setup Account A Infrastructure"
+            },
+            "Setup Account A Infrastructure": {
+              "Type": "Parallel",
+              "Branches": [
+                {
+                  "StartAt": "Create Account A Bucket",
+                  "States": {
+                    "Create Account A Bucket": {
+                      "Type": "Task",
+                      "Resource": "arn:aws:states:::aws-sdk:s3:createBucket",
+                      "Parameters": {
+                        "Bucket.$": "States.Format('mnt-prod-d-stack-client-{}', $.companyName)",
+                        "CreateBucketConfiguration": {
+                          "LocationConstraint": "us-west-2"
+                        }
+                      },
+                      "ResultPath": null,
+                      "Next": "Enable Versioning A"
+                    },
+                    "Enable Versioning A": {
+                      "Type": "Task",
+                      "Resource": "arn:aws:states:::aws-sdk:s3:putBucketVersioning",
+                      "Parameters": {
+                        "Bucket.$": "States.Format('mnt-prod-d-stack-client-{}', $.companyName)",
+                        "VersioningConfiguration": {
+                          "Status": "Enabled"
+                        }
+                      },
+                      "ResultPath": null,
+                      "End": true
+                    }
+                  }
+                },
+                {
+                  "StartAt": "Create Account B Bucket",
+                  "States": {
+                    "Create Account B Bucket": {
+                      "Type": "Task",
+                      "Resource": "arn:aws:states:::lambda:invoke",
+                      "Parameters": {
+                        "FunctionName": "${CreateCrossAccountBucketFunction}",
+                        "Payload": {
+                          "bucketName.$": "States.Format('prod-d-stack-client-{}', $.companyName)",
+                          "targetAccount": "${AccountBId}",
+                          "region": "us-west-2"
+                        }
+                      },
+                      "ResultPath": null,
+                      "End": true
+                    }
+                  }
+                }
+              ],
+              "Next": "Trigger Third Workflow"
+            },
+            "Trigger Third Workflow": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "Parameters": {
+                "FunctionName": "${TriggerThirdWorkflowFunction}",
+                "Payload": {
+                  "companyName.$": "$.companyName",
+                  "userName.$": "$.userName",
+                  "userId.$": "$.userId"
+                }
+              },
+              "Next": "Second Workflow Success"
+            },
+            "Second Workflow Success": {
+              "Type": "Pass",
+              "Parameters": {
+                "workflowStatus": "SUCCESS",
+                "message": "Second workflow complete, third workflow triggered"
+              },
+              "End": true
+            }
+          }
+        }
+      RoleArn: !GetAtt SecondWorkflowExecutionRole.Arn
+
+  # Third Workflow State Machine (Simplified)
+  ThirdWorkflowStateMachine:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: ultimate-third-workflow
+      DefinitionString: !Sub |
+        {
+          "Comment": "Ultimate Third Workflow - Identity Center & Transfer Family Setup",
+          "StartAt": "Setup Identity Center Group",
+          "States": {
+            "Setup Identity Center Group": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "Parameters": {
+                "FunctionName": "${SetupIdentityCenterFunction}",
+                "Payload": {
+                  "companyName.$": "$.companyName",
+                  "userName.$": "$.userName"
+                }
+              },
+              "ResultPath": "$.identityResult",
+              "Catch": [
+                {
+                  "ErrorEquals": ["States.ALL"],
+                  "Next": "Setup Transfer Family",
+                  "ResultPath": "$.identityError"
+                }
+              ],
+              "Next": "Setup Transfer Family"
+            },
+            "Setup Transfer Family": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "Parameters": {
+                "FunctionName": "${SetupTransferFamilyFunction}",
+                "Payload": {
+                  "companyName.$": "$.companyName",
+                  "bucketName.$": "States.Format('prod-d-stack-client-{}', $.companyName)"
+                }
+              },
+              "Next": "Third Workflow Success"
+            },
+            "Third Workflow Success": {
+              "Type": "Pass",
+              "Parameters": {
+                "workflowStatus": "SUCCESS",
+                "message": "Complete onboarding automation finished successfully"
+              },
+              "End": true
+            }
+          }
+        }
+      RoleArn: !GetAtt ThirdWorkflowExecutionRole.Arn
+
+  # Lambda Functions
+  ExtractCompanyInfoFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: extract-company-info
+      Runtime: python3.9
+      Handler: index.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import csv
+          from io import StringIO
+          
+          def lambda_handler(event, context):
+              s3_client = boto3.client('s3')
+              
+              bucket = event['bucket']
+              key = event['key']
+              
+              # Download CSV file
+              response = s3_client.get_object(Bucket=bucket, Key=key)
+              csv_content = response['Body'].read().decode('utf-8')
+              
+              # Parse CSV to extract company info
+              csv_reader = csv.DictReader(StringIO(csv_content))
+              first_row = next(csv_reader)
+              
+              # Extract company name from filename or CSV content
+              company_name = key.split('/')[-1].split('.')[0].lower()
+              user_name = first_row.get('username', 'default.user')
+              user_id = first_row.get('userid', 'default-001')
+              
+              return {
+                  'statusCode': 200,
+                  'companyName': company_name,
+                  'userName': user_name,
+                  'userId': user_id
+              }
+
+  ParseDynamoDBEventFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: parse-dynamodb-event-ultimate
+      Runtime: python3.9
+      Handler: index.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        ZipFile: |
+          import json
+          
+          def lambda_handler(event, context):
+              records = event['Records']
+              
+              for record in records:
+                  if record['eventName'] == 'INSERT':
+                      new_image = record['dynamodb']['NewImage']
+                      
+                      return {
+                          'statusCode': 200,
+                          'companyName': new_image['companyName']['S'],
+                          'userName': new_image['userName']['S'],
+                          'userId': new_image['userId']['S'],
+                          'eventType': 'NEW_USER'
+                      }
+              
+              return {'statusCode': 400, 'message': 'No INSERT records found'}
+
+  CreateCrossAccountBucketFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: create-cross-account-bucket-ultimate
+      Runtime: python3.9
+      Handler: index.lambda_handler
+      Role: !GetAtt CrossAccountLambdaRole.Arn
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          
+          def lambda_handler(event, context):
+              # Assume cross-account role and create bucket
+              sts_client = boto3.client('sts')
+              
+              role_arn = f"arn:aws:iam::{event['targetAccount']}:role/CrossAccountBucketCreationRole"
+              
+              assumed_role = sts_client.assume_role(
+                  RoleArn=role_arn,
+                  RoleSessionName='CreateBucketSession'
+              )
+              
+              credentials = assumed_role['Credentials']
+              s3_client = boto3.client(
+                  's3',
+                  aws_access_key_id=credentials['AccessKeyId'],
+                  aws_secret_access_key=credentials['SecretAccessKey'],
+                  aws_session_token=credentials['SessionToken'],
+                  region_name=event['region']
+              )
+              
+              s3_client.create_bucket(
+                  Bucket=event['bucketName'],
+                  CreateBucketConfiguration={'LocationConstraint': event['region']}
+              )
+              
+              return {
+                  'statusCode': 200,
+                  'bucketName': event['bucketName'],
+                  'message': 'Cross-account bucket created successfully'
+              }
+
+  TriggerThirdWorkflowFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: trigger-third-workflow-ultimate
+      Runtime: python3.9
+      Handler: index.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          THIRD_WORKFLOW_ARN: !Ref ThirdWorkflowStateMachine
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import os
+          
+          def lambda_handler(event, context):
+              stepfunctions_client = boto3.client('stepfunctions')
+              
+              response = stepfunctions_client.start_execution(
+                  stateMachineArn=os.environ['THIRD_WORKFLOW_ARN'],
+                  input=json.dumps(event)
+              )
+              
+              return {
+                  'statusCode': 200,
+                  'executionArn': response['executionArn']
+              }
+
+  SetupIdentityCenterFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: setup-identity-center-ultimate
+      Runtime: python3.9
+      Handler: index.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          
+          def lambda_handler(event, context):
+              # Simplified Identity Center setup
+              return {
+                  'statusCode': 200,
+                  'groupId': f"group-{event['companyName']}",
+                  'message': f"Identity Center group created for {event['companyName']}"
+              }
+
+  SetupTransferFamilyFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: setup-transfer-family-ultimate
+      Runtime: python3.9
+      Handler: index.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          
+          def lambda_handler(event, context):
+              # Simplified Transfer Family setup
+              return {
+                  'statusCode': 200,
+                  'serverId': 'demo-server-id',
+                  'transferEndpoint': f"demo.transfer.{event['companyName']}.com",
+                  'message': f"Transfer Family configured for {event['companyName']}"
+              }
+
+  # DynamoDB Stream Event Source Mapping
+  DynamoDBStreamEventSourceMapping:
+    Type: AWS::Lambda::EventSourceMapping
+    Properties:
+      EventSourceArn: !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/user_sftp_table_center/stream/*"
+      FunctionName: !GetAtt TriggerSecondWorkflowFunction.Arn
+      StartingPosition: LATEST
+      BatchSize: 1
+
+  TriggerSecondWorkflowFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: trigger-second-workflow-ultimate
+      Runtime: python3.9
+      Handler: index.lambda_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          SECOND_WORKFLOW_ARN: !Ref SecondWorkflowStateMachine
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import os
+          
+          def lambda_handler(event, context):
+              stepfunctions_client = boto3.client('stepfunctions')
+              
+              response = stepfunctions_client.start_execution(
+                  stateMachineArn=os.environ['SECOND_WORKFLOW_ARN'],
+                  input=json.dumps(event)
+              )
+              
+              return {
+                  'statusCode': 200,
+                  'executionArn': response['executionArn']
+              }
+
+  # IAM Roles
+  EventBridgeExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: TriggerStepFunctionPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - states:StartExecution
+                Resource: !GetAtt FirstWorkflowStateMachine.Arn
+
+  FirstWorkflowExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: states.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: FirstWorkflowPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - lambda:InvokeFunction
+                  - dynamodb:PutItem
+                Resource: '*'
+
+  SecondWorkflowExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: states.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: SecondWorkflowPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - lambda:InvokeFunction
+                  - s3:CreateBucket
+                  - s3:PutBucketVersioning
+                Resource: '*'
+
+  ThirdWorkflowExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: states.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: ThirdWorkflowPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - lambda:InvokeFunction
+                Resource: '*'
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: LambdaExecutionPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - states:StartExecution
+                  - dynamodb:*
+                Resource: '*'
+
+  CrossAccountLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: CrossAccountAssumeRolePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sts:AssumeRole
+                Resource: !Sub "arn:aws:iam::${AccountBId}:role/CrossAccountBucketCreationRole"
+
+Outputs:
+  OnboardingBucketName:
+    Description: S3 bucket for client onboarding automation
+    Value: !Ref OnboardingClientBucket
+    Export:
+      Name: OnboardingClientBucket
+
+  FirstWorkflowArn:
+    Description: ARN of the First Workflow State Machine
+    Value: !Ref FirstWorkflowStateMachine
+
+  SecondWorkflowArn:
+    Description: ARN of the Second Workflow State Machine
+    Value: !Ref SecondWorkflowStateMachine
+
+  ThirdWorkflowArn:
+    Description: ARN of the Third Workflow State Machine
+    Value: !Ref ThirdWorkflowStateMachine

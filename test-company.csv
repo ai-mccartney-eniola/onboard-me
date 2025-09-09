@@ -1,0 +1,4 @@
+username,userid,email,department
+john.doe,john-001,john.doe@testcompany.com,engineering
+jane.smith,jane-002,jane.smith@testcompany.com,marketing
+bob.wilson,bob-003,bob.wilson@testcompany.com,sales
