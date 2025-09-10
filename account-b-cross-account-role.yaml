@@ -11,7 +11,7 @@ Resources:
   CrossAccountBucketCreationRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: CrossAccountBucketCreationRole
+      RoleName: CrossAccountBucketCreationTeRole
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -21,7 +21,7 @@ Resources:
             Action: sts:AssumeRole
             Condition:
               StringEquals:
-                'sts:ExternalId': 'ultimate-onboarding-automation'
+                'sts:ExternalId': 'ultimate-te-onboarding-automation'
       Policies:
         - PolicyName: S3BucketCreationPolicy
           PolicyDocument:
@@ -34,7 +34,7 @@ Resources:
                   - s3:PutBucketNotification
                   - s3:GetBucketLocation
                 Resource: 
-                  - "arn:aws:s3:::prod-d-stack-client-*"
+                  - "arn:aws:s3:::prod-te-d-stack-client-*"
               - Effect: Allow
                 Action:
                   - s3:ListAllMyBuckets
@@ -45,4 +45,4 @@ Outputs:
     Description: ARN of the cross-account role
     Value: !GetAtt CrossAccountBucketCreationRole.Arn
     Export:
-      Name: CrossAccountBucketCreationRoleArn
+      Name: CrossAccountBucketCreationTeRoleArn

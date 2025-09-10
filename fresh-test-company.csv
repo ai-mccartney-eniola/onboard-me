@@ -1,0 +1,4 @@
+username,userid,email,department
+alice.johnson,alice-001,alice.johnson@freshtest.com,engineering
+bob.smith,bob-002,bob.smith@freshtest.com,marketing
+carol.wilson,carol-003,carol.wilson@freshtest.com,sales

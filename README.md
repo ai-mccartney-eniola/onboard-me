@@ -12,7 +12,7 @@ CSV Processing → Event Rule → User Creation → Stream Trigger → Infrastru
 
 ## Workflow Chain
 
-### 1. **First Workflow** (ultimate-first-workflow)
+### 1. **First Workflow** (ultimate-te-first-workflow)
 - **Trigger**: S3 PUT event via EventBridge
 - **Actions**: 
   - Extract company info from CSV filename
@@ -20,7 +20,7 @@ CSV Processing → Event Rule → User Creation → Stream Trigger → Infrastru
   - Create DynamoDB entry
 - **Output**: Triggers DynamoDB stream
 
-### 2. **Second Workflow** (ultimate-second-workflow)  
+### 2. **Second Workflow** (ultimate-te-second-workflow)  
 - **Trigger**: DynamoDB stream from First Workflow
 - **Actions**:
   - Parse DynamoDB stream event
@@ -29,7 +29,7 @@ CSV Processing → Event Rule → User Creation → Stream Trigger → Infrastru
   - Trigger Third Workflow
 - **Output**: Infrastructure ready
 
-### 3. **Third Workflow** (ultimate-third-workflow)
+### 3. **Third Workflow** (ultimate-te-third-workflow)
 - **Trigger**: Lambda call from Second Workflow
 - **Actions**:
   - Setup IAM Identity Center groups
@@ -72,7 +72,7 @@ chmod +x test-automation.sh
 ## Key Components
 
 ### S3 Bucket
-- **Name**: `d-stack-onboarding-client-automation-bkt`
+- **Name**: `d-stack-te-onboarding-client-automation-bkt`
 - **EventBridge**: Enabled for PUT events
 - **Trigger**: CSV files with `.csv` suffix
 
@@ -85,20 +85,20 @@ chmod +x test-automation.sh
 ### Cross-Account Setup
 - **Account A**: Main automation and workflows
 - **Account B**: Target infrastructure and Identity Center
-- **Role**: `CrossAccountBucketCreationRole` in Account B
+- **Role**: `CrossAccountBucketCreationTeRole` in Account B
 
 ### Lambda Functions
-- `extract-company-info`: Parse CSV and extract company details
-- `parse-dynamodb-event-ultimate`: Process DynamoDB stream events
-- `create-cross-account-bucket-ultimate`: Create buckets in Account B
-- `trigger-*-workflow-ultimate`: Chain workflow executions
+- `extract-te-company-info`: Parse CSV and extract company details
+- `parse-dynamodb-event-te-ultimate`: Process DynamoDB stream events
+- `create-cross-account-bucket-te-ultimate`: Create buckets in Account B
+- `trigger-*-workflow-te-ultimate`: Chain workflow executions
 
 ## Monitoring
 
 ### Step Functions Console URLs
 - **First**: `https://us-west-2.console.aws.amazon.com/states/home?region=us-west-2#/statemachines`
-- **Second**: Same console, look for `ultimate-second-workflow`
-- **Third**: Same console, look for `ultimate-third-workflow`
+- **Second**: Same console, look for `ultimate-te-second-workflow`
+- **Third**: Same console, look for `ultimate-te-third-workflow`
 
 ### CloudWatch Logs
 - All Lambda functions log to CloudWatch
@@ -107,13 +107,13 @@ chmod +x test-automation.sh
 ## Testing
 
 ### Manual Test
-1. Upload any `.csv` file to `d-stack-onboarding-client-automation-bkt`
+1. Upload any `.csv` file to `d-stack-te-onboarding-client-automation-bkt`
 2. Filename becomes company name (e.g., `acme-corp.csv` → company: `acme-corp`)
 3. Monitor Step Functions executions
 
 ### Expected Results
-- ✅ Account A bucket: `mnt-prod-d-stack-client-{company}`
-- ✅ Account B bucket: `prod-d-stack-client-{company}`
+- ✅ Account A bucket: `mnt-prod-te-d-stack-client-{company}`
+- ✅ Account B bucket: `prod-te-d-stack-client-{company}`
 - ✅ DynamoDB entry with user details
 - ✅ Identity Center group setup (demo)
 - ✅ Transfer Family configuration (demo)

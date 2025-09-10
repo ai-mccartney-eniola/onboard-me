@@ -4,7 +4,7 @@
 
 echo "🧪 Testing Ultimate Onboarding Automation..."
 
-BUCKET_NAME="d-stack-onboarding-client-automation-bkt"
+BUCKET_NAME="d-stack-te-onboarding-client-automation-bkt"
 TEST_FILE="test-company.csv"
 REGION="us-west-2"
 
@@ -17,9 +17,9 @@ if [ $? -eq 0 ]; then
     echo "🔄 Automation should start within seconds..."
     echo ""
     echo "🔗 Monitor progress:"
-    echo "   First Workflow: https://$REGION.console.aws.amazon.com/states/home?region=$REGION#/statemachines/view/arn:aws:states:$REGION:762233731285:stateMachine:ultimate-first-workflow"
-    echo "   Second Workflow: https://$REGION.console.aws.amazon.com/states/home?region=$REGION#/statemachines/view/arn:aws:states:$REGION:762233731285:stateMachine:ultimate-second-workflow"
-    echo "   Third Workflow: https://$REGION.console.aws.amazon.com/states/home?region=$REGION#/statemachines/view/arn:aws:states:$REGION:762233731285:stateMachine:ultimate-third-workflow"
+    echo "   First Workflow: https://$REGION.console.aws.amazon.com/states/home?region=$REGION#/statemachines/view/arn:aws:states:$REGION:762233731285:stateMachine:ultimate-te-first-workflow"
+    echo "   Second Workflow: https://$REGION.console.aws.amazon.com/states/home?region=$REGION#/statemachines/view/arn:aws:states:$REGION:762233731285:stateMachine:ultimate-te-second-workflow"
+    echo "   Third Workflow: https://$REGION.console.aws.amazon.com/states/home?region=$REGION#/statemachines/view/arn:aws:states:$REGION:762233731285:stateMachine:ultimate-te-third-workflow"
 else
     echo "❌ Failed to upload test file"
     exit 1

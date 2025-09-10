@@ -12,7 +12,7 @@ Resources:
   OnboardingClientBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: d-stack-onboarding-client-automation-bkt
+      BucketName: d-stack-te-onboarding-client-automation-bkt
       VersioningConfiguration:
         Status: Enabled
       NotificationConfiguration:
@@ -28,7 +28,7 @@ Resources:
   S3PutEventRule:
     Type: AWS::Events::Rule
     Properties:
-      Name: s3-put-trigger-onboarding
+      Name: s3-put-trigger-te-onboarding
       Description: Trigger onboarding workflow when CSV files are uploaded
       EventPattern:
         source: ["aws.s3"]
@@ -61,7 +61,7 @@ Resources:
   FirstWorkflowStateMachine:
     Type: AWS::StepFunctions::StateMachine
     Properties:
-      StateMachineName: ultimate-first-workflow
+      StateMachineName: ultimate-te-first-workflow
       DefinitionString: !Sub |
         {
           "Comment": "Ultimate First Workflow - CSV Processing and User Creation",
@@ -100,6 +100,7 @@ Resources:
                   "status": {"S": "active"}
                 }
               },
+              "ResultPath": "$.dynamoResult",
               "Next": "First Workflow Complete"
             },
             "First Workflow Complete": {
@@ -121,7 +122,7 @@ Resources:
   SecondWorkflowStateMachine:
     Type: AWS::StepFunctions::StateMachine
     Properties:
-      StateMachineName: ultimate-second-workflow
+      StateMachineName: ultimate-te-second-workflow
       DefinitionString: !Sub |
         {
           "Comment": "Ultimate Second Workflow - Account A & B Infrastructure Setup",
@@ -154,7 +155,7 @@ Resources:
                       "Type": "Task",
                       "Resource": "arn:aws:states:::aws-sdk:s3:createBucket",
                       "Parameters": {
-                        "Bucket.$": "States.Format('mnt-prod-d-stack-client-{}', $.companyName)",
+                        "Bucket.$": "States.Format('mnt-prod-te-d-stack-client-{}', $.companyName)",
                         "CreateBucketConfiguration": {
                           "LocationConstraint": "us-west-2"
                         }
@@ -166,7 +167,7 @@ Resources:
                       "Type": "Task",
                       "Resource": "arn:aws:states:::aws-sdk:s3:putBucketVersioning",
                       "Parameters": {
-                        "Bucket.$": "States.Format('mnt-prod-d-stack-client-{}', $.companyName)",
+                        "Bucket.$": "States.Format('mnt-prod-te-d-stack-client-{}', $.companyName)",
                         "VersioningConfiguration": {
                           "Status": "Enabled"
                         }
@@ -185,7 +186,7 @@ Resources:
                       "Parameters": {
                         "FunctionName": "${CreateCrossAccountBucketFunction}",
                         "Payload": {
-                          "bucketName.$": "States.Format('prod-d-stack-client-{}', $.companyName)",
+                          "bucketName.$": "States.Format('prod-te-d-stack-client-{}', $.companyName)",
                           "targetAccount": "${AccountBId}",
                           "region": "us-west-2"
                         }
@@ -204,9 +205,9 @@ Resources:
               "Parameters": {
                 "FunctionName": "${TriggerThirdWorkflowFunction}",
                 "Payload": {
-                  "companyName.$": "$.companyName",
-                  "userName.$": "$.userName",
-                  "userId.$": "$.userId"
+                  "companyName.$": "$$.Execution.Input.Records[0].dynamodb.NewImage.companyName.S",
+                  "userName.$": "$$.Execution.Input.Records[0].dynamodb.NewImage.userName.S",
+                  "userId.$": "$$.Execution.Input.Records[0].dynamodb.NewImage.userId.S"
                 }
               },
               "Next": "Second Workflow Success"
@@ -227,7 +228,7 @@ Resources:
   ThirdWorkflowStateMachine:
     Type: AWS::StepFunctions::StateMachine
     Properties:
-      StateMachineName: ultimate-third-workflow
+      StateMachineName: ultimate-te-third-workflow
       DefinitionString: !Sub |
         {
           "Comment": "Ultimate Third Workflow - Identity Center & Transfer Family Setup",
@@ -260,7 +261,7 @@ Resources:
                 "FunctionName": "${SetupTransferFamilyFunction}",
                 "Payload": {
                   "companyName.$": "$.companyName",
-                  "bucketName.$": "States.Format('prod-d-stack-client-{}', $.companyName)"
+                  "bucketName.$": "States.Format('prod-te-d-stack-client-{}', $.companyName)"
                 }
               },
               "Next": "Third Workflow Success"
@@ -281,7 +282,7 @@ Resources:
   ExtractCompanyInfoFunction:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: extract-company-info
+      FunctionName: extract-te-company-info
       Runtime: python3.9
       Handler: index.lambda_handler
       Role: !GetAtt LambdaExecutionRole.Arn
@@ -321,7 +322,7 @@ Resources:
   ParseDynamoDBEventFunction:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: parse-dynamodb-event-ultimate
+      FunctionName: parse-dynamodb-event-te-ultimate
       Runtime: python3.9
       Handler: index.lambda_handler
       Role: !GetAtt LambdaExecutionRole.Arn
@@ -349,7 +350,7 @@ Resources:
   CreateCrossAccountBucketFunction:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: create-cross-account-bucket-ultimate
+      FunctionName: create-cross-account-bucket-te-ultimate
       Runtime: python3.9
       Handler: index.lambda_handler
       Role: !GetAtt CrossAccountLambdaRole.Arn
@@ -362,7 +363,7 @@ Resources:
               # Assume cross-account role and create bucket
               sts_client = boto3.client('sts')
               
-              role_arn = f"arn:aws:iam::{event['targetAccount']}:role/CrossAccountBucketCreationRole"
+              role_arn = f"arn:aws:iam::{event['targetAccount']}:role/CrossAccountBucketCreationTeRole"
               
               assumed_role = sts_client.assume_role(
                   RoleArn=role_arn,
@@ -392,7 +393,7 @@ Resources:
   TriggerThirdWorkflowFunction:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: trigger-third-workflow-ultimate
+      FunctionName: trigger-third-workflow-te-ultimate
       Runtime: python3.9
       Handler: index.lambda_handler
       Role: !GetAtt LambdaExecutionRole.Arn
@@ -421,7 +422,7 @@ Resources:
   SetupIdentityCenterFunction:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: setup-identity-center-ultimate
+      FunctionName: setup-identity-center-te-ultimate
       Runtime: python3.9
       Handler: index.lambda_handler
       Role: !GetAtt LambdaExecutionRole.Arn
@@ -441,7 +442,7 @@ Resources:
   SetupTransferFamilyFunction:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: setup-transfer-family-ultimate
+      FunctionName: setup-transfer-family-te-ultimate
       Runtime: python3.9
       Handler: index.lambda_handler
       Role: !GetAtt LambdaExecutionRole.Arn
@@ -463,7 +464,7 @@ Resources:
   DynamoDBStreamEventSourceMapping:
     Type: AWS::Lambda::EventSourceMapping
     Properties:
-      EventSourceArn: !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/user_sftp_table_center/stream/*"
+      EventSourceArn: "arn:aws:dynamodb:us-west-2:762233731285:table/user_sftp_table_center/stream/2025-09-08T12:17:55.083"
       FunctionName: !GetAtt TriggerSecondWorkflowFunction.Arn
       StartingPosition: LATEST
       BatchSize: 1
@@ -471,7 +472,7 @@ Resources:
   TriggerSecondWorkflowFunction:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: trigger-second-workflow-ultimate
+      FunctionName: trigger-second-workflow-te-ultimate
       Runtime: python3.9
       Handler: index.lambda_handler
       Role: !GetAtt LambdaExecutionRole.Arn
@@ -625,7 +626,7 @@ Resources:
               - Effect: Allow
                 Action:
                   - sts:AssumeRole
-                Resource: !Sub "arn:aws:iam::${AccountBId}:role/CrossAccountBucketCreationRole"
+                Resource: !Sub "arn:aws:iam::${AccountBId}:role/CrossAccountBucketCreationTeRole"
 
 Outputs:
   OnboardingBucketName:

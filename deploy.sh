@@ -20,7 +20,7 @@ echo "    export AWS_DEFAULT_REGION=$REGION"
 
 aws cloudformation deploy \
   --template-file account-b-cross-account-role.yaml \
-  --stack-name ultimate-onboarding-account-b-role \
+  --stack-name ultimate-te-onboarding-account-b-role \
   --parameter-overrides AccountAId=$ACCOUNT_A \
   --capabilities CAPABILITY_NAMED_IAM \
   --region $REGION
@@ -38,7 +38,7 @@ echo "⚠️  Please configure AWS credentials for Account A before running this
 
 aws cloudformation deploy \
   --template-file ultimate-onboarding-stack.yaml \
-  --stack-name ultimate-onboarding-automation \
+  --stack-name ultimate-te-onboarding-automation \
   --parameter-overrides AccountBId=$ACCOUNT_B \
   --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
   --region $REGION
@@ -53,13 +53,13 @@ fi
 echo "🎉 Ultimate Onboarding Automation Deployment Complete!"
 echo ""
 echo "📋 Next Steps:"
-echo "1. Upload a CSV file to: d-stack-onboarding-client-automation-bkt"
+echo "1. Upload a CSV file to: d-stack-te-onboarding-client-automation-bkt"
 echo "2. The complete workflow chain will automatically trigger:"
 echo "   - First Workflow: CSV processing → DynamoDB entry"
 echo "   - Second Workflow: Account A & B infrastructure setup"
 echo "   - Third Workflow: Identity Center & Transfer Family setup"
 echo ""
 echo "🔗 Monitor executions in Step Functions console:"
-echo "   - First: ultimate-first-workflow"
-echo "   - Second: ultimate-second-workflow" 
-echo "   - Third: ultimate-third-workflow"
+echo "   - First: ultimate-te-first-workflow"
+echo "   - Second: ultimate-te-second-workflow" 
+echo "   - Third: ultimate-te-third-workflow"
